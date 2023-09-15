@@ -91,6 +91,8 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
     private var BASAL_ENERGY_BURNED = "BASAL_ENERGY_BURNED"
     private var FLIGHTS_CLIMBED = "FLIGHTS_CLIMBED"
     private var RESPIRATORY_RATE = "RESPIRATORY_RATE"
+    private var HEART_RATE_VARIABILITY_SDNN = "HEART_RATE_VARIABILITY_SDNN"
+    private var LEAN_BODY_MASS = "LEAN_BODY_MASS"
 
     // TODO support unknown?
     private var SLEEP_ASLEEP = "SLEEP_ASLEEP"
@@ -1810,6 +1812,24 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
                     "source_name" to metadata.dataOrigin.packageName,
                 )
             )
+            is HeartRateVariabilityRmssdRecord -> return listOf(
+                mapOf<String, Any>(
+                    "value" to record.heartRateVariabilityMillis,
+                    "date_from" to record.time.toEpochMilli(),
+                    "date_to" to record.time.toEpochMilli(),
+                    "source_id" to "",
+                    "source_name" to metadata.dataOrigin.packageName,
+                )
+            )
+            is LeanBodyMassRecord -> return listOf(
+                mapOf<String, Any>(
+                    "value" to record.mass.inKilograms,
+                    "date_from" to record.time.toEpochMilli(),
+                    "date_to" to record.time.toEpochMilli(),
+                    "source_id" to "",
+                    "source_name" to metadata.dataOrigin.packageName,
+                )
+            )
             // is ExerciseSessionRecord -> return listOf(mapOf<String, Any>("value" to ,
             //                                             "date_from" to ,
             //                                             "date_to" to ,
@@ -1965,6 +1985,16 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
             RESPIRATORY_RATE -> RespiratoryRateRecord(
                 time = Instant.ofEpochMilli(startTime),
                 rate = value,
+                zoneOffset = null,
+            )
+            HEART_RATE_VARIABILITY_SDNN -> HeartRateVariabilityRmssdRecord(
+                time = Instant.ofEpochMilli(startTime),
+                heartRateVariabilityMillis = value,
+                zoneOffset = null,
+            )
+            LEAN_BODY_MASS -> LeanBodyMassRecord(
+                time = Instant.ofEpochMilli(startTime),
+                mass = Mass.kilograms(value),
                 zoneOffset = null,
             )
             // AGGREGATE_STEP_COUNT -> StepsRecord()
@@ -2133,6 +2163,8 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
         BASAL_ENERGY_BURNED to BasalMetabolicRateRecord::class,
         FLIGHTS_CLIMBED to FloorsClimbedRecord::class,
         RESPIRATORY_RATE to RespiratoryRateRecord::class,
+        HEART_RATE_VARIABILITY_SDNN to HeartRateVariabilityRmssdRecord::class,
+        LEAN_BODY_MASS to LeanBodyMassRecord::class,
         // MOVE_MINUTES to TODO: Find alternative?
         // TODO: Implement remaining types
         // "ActiveCaloriesBurned" to ActiveCaloriesBurnedRecord::class,
@@ -2152,7 +2184,6 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
         // "HeartRate" to HeartRateRecord::class,
         // "Height" to HeightRecord::class,
         // "Hydration" to HydrationRecord::class,
-        // "LeanBodyMass" to LeanBodyMassRecord::class,
         // "MenstruationFlow" to MenstruationFlowRecord::class,
         // "MenstruationPeriod" to MenstruationPeriodRecord::class,
         // "Nutrition" to NutritionRecord::class,
