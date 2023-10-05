@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.NonNull
 import androidx.core.content.ContextCompat
 import androidx.health.connect.client.HealthConnectClient
@@ -33,6 +35,7 @@ import com.google.android.gms.fitness.result.DataReadResponse
 import com.google.android.gms.fitness.result.SessionReadResponse
 import com.google.android.gms.tasks.OnFailureListener
 import com.google.android.gms.tasks.OnSuccessListener
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -47,6 +50,7 @@ import java.time.*
 import java.time.temporal.ChronoUnit
 import java.util.*
 import java.util.concurrent.*
+import kotlin.reflect.KClass
 
 
 const val GOOGLE_FIT_PERMISSIONS_REQUEST_CODE = 1111
@@ -68,7 +72,7 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
     private var activity: Activity? = null
     private var context: Context? = null
     private var threadPoolExecutor: ExecutorService? = null
-    private var useHealthConnectIfAvailable: Boolean = false
+    private var useHealthConnectIfAvailable: Boolean = true
     private lateinit var healthConnectClient: HealthConnectClient
     private lateinit var scope: CoroutineScope
 
@@ -1227,27 +1231,7 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
         }
         mResult = result
 
-        if (useHealthConnectIfAvailable && healthConnectAvailable) {
-            requestAuthorizationHC(call, result)
-            return
-        }
-
-        val optionsToRegister = callToHealthTypes(call)
-
-        // Set to false due to bug described in https://github.com/cph-cachet/flutter-plugins/issues/640#issuecomment-1366830132
-        val isGranted = false
-
-        // If not granted then ask for permission
-        if (!isGranted && activity != null) {
-            GoogleSignIn.requestPermissions(
-                activity!!,
-                GOOGLE_FIT_PERMISSIONS_REQUEST_CODE,
-                GoogleSignIn.getLastSignedInAccount(context!!),
-                optionsToRegister,
-            )
-        } else { // / Permission already granted
-            result?.success(true)
-        }
+        requestAuthorizationHC(call, result)
     }
 
     /**
@@ -1412,6 +1396,10 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
         }
         binding.addActivityResultListener(this)
         activity = binding.activity
+
+        permissionsLauncher = (activity as ComponentActivity).registerForActivityResult(
+            PermissionController.createRequestPermissionResultContract()
+        ) { granted -> onPermissionsResult(granted) }
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
@@ -1447,8 +1435,8 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
     fun openSystemSettings(call: MethodCall, result: Result) {
         try {
             val intent = Intent()
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             intent.action = HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             context?.startActivity(intent)
             result.success(true)
         } catch (e: Throwable) {
@@ -1511,6 +1499,13 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
         }
     }
 
+    private lateinit var requestedPermissions: Set<String>
+    private lateinit var permissionsLauncher: ActivityResultLauncher<Set<String>>
+
+    private fun onPermissionsResult(granted: Set<String>) {
+        mResult?.success(granted.containsAll(requestedPermissions))
+    }
+
     private fun requestAuthorizationHC(call: MethodCall, result: Result) {
         val args = call.arguments as HashMap<*, *>
         val types = (args["types"] as? ArrayList<*>)?.filterIsInstance<String>()!!
@@ -1553,9 +1548,8 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
                 }
             }
         }
-        val contract = PermissionController.createRequestPermissionResultContract()
-        val intent = contract.createIntent(activity!!, permList.toSet())
-        activity!!.startActivityForResult(intent, HEALTH_CONNECT_RESULT_CODE)
+        requestedPermissions = permList.toSet()
+        permissionsLauncher.launch(permList.toSet())
     }
 
     fun getHCData(call: MethodCall, result: Result) {
@@ -2135,6 +2129,13 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
         6 to SLEEP_REM,
     )
 
+    fun sleepRecordTypeForOS(): KClass<out Record> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+            SleepSessionRecord::class
+        else
+            SleepStageRecord::class
+    }
+
     val MapToHCType = hashMapOf(
         BODY_FAT_PERCENTAGE to BodyFatRecord::class,
         HEIGHT to HeightRecord::class,
@@ -2150,12 +2151,12 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
         BLOOD_GLUCOSE to BloodGlucoseRecord::class,
         DISTANCE_DELTA to DistanceRecord::class,
         WATER to HydrationRecord::class,
-        SLEEP_ASLEEP to SleepStageRecord::class,
-        SLEEP_AWAKE to SleepStageRecord::class,
-        SLEEP_LIGHT to SleepStageRecord::class,
-        SLEEP_DEEP to SleepStageRecord::class,
-        SLEEP_REM to SleepStageRecord::class,
-        SLEEP_OUT_OF_BED to SleepStageRecord::class,
+        SLEEP_ASLEEP to sleepRecordTypeForOS(),
+        SLEEP_AWAKE to sleepRecordTypeForOS(),
+        SLEEP_LIGHT to sleepRecordTypeForOS(),
+        SLEEP_DEEP to sleepRecordTypeForOS(),
+        SLEEP_REM to sleepRecordTypeForOS(),
+        SLEEP_OUT_OF_BED to sleepRecordTypeForOS(),
         SLEEP_SESSION to SleepSessionRecord::class,
         WORKOUT to ExerciseSessionRecord::class,
         RESTING_HEART_RATE to RestingHeartRateRecord::class,
